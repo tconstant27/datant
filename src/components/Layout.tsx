@@ -39,6 +39,11 @@ export default function Layout() {
       <main className="min-w-0 flex-1 px-5 py-6 md:px-10 md:py-8">
         <div className="mx-auto flex max-w-7xl flex-col gap-7">
           <Outlet />
+          <footer className="border-t border-line pt-5 text-xs leading-relaxed text-muted">
+            Datant n'est pas approuvé par Riot Games et ne reflète pas les opinions de Riot Games ni de quiconque
+            officiellement impliqué dans la production ou la gestion des propriétés de Riot Games. Riot Games et toutes
+            les propriétés associées sont des marques commerciales ou déposées de Riot Games, Inc.
+          </footer>
         </div>
       </main>
     </div>

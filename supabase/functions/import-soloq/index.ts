@@ -7,7 +7,8 @@ import { createClient } from 'npm:@supabase/supabase-js@2'
 
 const RIOT_KEY = Deno.env.get('RIOT_API_KEY') ?? ''
 const IMPORT_SECRET = Deno.env.get('IMPORT_SECRET') ?? ''
-const REGION = 'https://europe.api.riotgames.com' // routage EUW
+const REGION = 'https://europe.api.riotgames.com' // routage régional (comptes, parties)
+const PLATFORM = 'https://euw1.api.riotgames.com' // serveur EUW (rang)
 const QUEUE_SOLOQ = 420
 const MATCHES_PER_PLAYER = 10 // parties récupérées par joueur et par passage
 
@@ -16,11 +17,11 @@ const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SE
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 // Appel à l'API Riot avec gestion de la limite de débit (429)
-async function riot(path: string, essais = 3): Promise<any> {
-  const res = await fetch(REGION + path, { headers: { 'X-Riot-Token': RIOT_KEY } })
+async function riot(path: string, essais = 3, hote = REGION): Promise<any> {
+  const res = await fetch(hote + path, { headers: { 'X-Riot-Token': RIOT_KEY } })
   if (res.status === 429 && essais > 0) {
     await sleep((Number(res.headers.get('Retry-After')) || 5) * 1000)
-    return riot(path, essais - 1)
+    return riot(path, essais - 1, hote)
   }
   if (!res.ok) throw new Error(`Riot ${res.status} sur ${path.split('?')[0]}`)
   return res.json()
@@ -60,6 +61,9 @@ async function importerPartie(matchId: string, puuidJoueur: string, noms: Record
   const timeline = await riot(`/lol/match/v5/matches/${matchId}/timeline`)
   const info = match.info
   const moi = info.participants.find((p: any) => p.puuid === puuidJoueur)
+  if (moi?.profileIcon !== undefined) {
+    await db.from('players').update({ profile_icon: moi.profileIcon }).eq('puuid', puuidJoueur)
+  }
 
   const { error: e1 } = await db.from('matches').upsert({
     id: matchId,
@@ -145,15 +149,31 @@ Deno.serve(async (req) => {
         await db.from('players').update({ puuid }).eq('id', j.id)
       }
 
-      // 2. Dernières parties SoloQ, sans celles déjà en base
+      // 2. Rang SoloQ (sans bloquer l'import en cas d'échec)
+      try {
+        const entrees: any[] = await riot(`/lol/league/v4/entries/by-puuid/${puuid}`, 3, PLATFORM)
+        const solo = entrees.find((e) => e.queueType === 'RANKED_SOLO_5x5')
+        await db.from('players').update({
+          rank_tier: solo?.tier ?? null,
+          rank_division: solo?.rank ?? null,
+          rank_lp: solo?.leaguePoints ?? null,
+          rank_wins: solo?.wins ?? null,
+          rank_losses: solo?.losses ?? null,
+        }).eq('id', j.id)
+      } catch (e) {
+        ligne.erreurs.push(`rang : ${(e as Error).message}`)
+      }
+
+      // 3. Dernières parties SoloQ, sans celles déjà en base
       const idsRiot: string[] = await riot(
         `/lol/match/v5/matches/by-puuid/${puuid}/ids?queue=${QUEUE_SOLOQ}&count=${MATCHES_PER_PLAYER}`,
       )
       const { data: dejaLa } = await db.from('matches').select('id').in('id', idsRiot)
       const connus = new Set((dejaLa ?? []).map((m) => m.id))
 
-      // 3. Import des nouvelles parties
-      for (const id of idsRiot.filter((id) => !connus.has(id))) {
+      // 4. Import des nouvelles parties
+      // de la plus ancienne à la plus récente : l'icône de profil finale est la plus récente
+      for (const id of idsRiot.filter((id) => !connus.has(id)).reverse()) {
         try {
           await importerPartie(id, puuid, noms)
           ligne.nouvelles++
