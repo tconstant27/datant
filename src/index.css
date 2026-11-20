@@ -1,0 +1,36 @@
+@import "tailwindcss";
+
+/* Couleurs et polices reprises des maquettes */
+@theme {
+  --color-bg: #0b0f14;
+  --color-sidebar: #11161d;
+  --color-surface: #131a22;
+  --color-surface-2: #161d26;
+  --color-input: #0f141a;
+  --color-line: #222a35;
+  --color-line-strong: #2e3a48;
+  --color-active: #1d2733;
+  --color-text: #e6edf3;
+  --color-text-2: #c9d3dd;
+  --color-muted: #9ba7b4;
+  --color-accent: #4da3ff;
+  --color-accent-soft: #7fbdff;
+  --color-warn: #f5a623;
+  --color-ok: #3fb950;
+
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-display: "Space Grotesk", "Inter", sans-serif;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+}
