@@ -101,6 +101,8 @@ export default function JoueursPage() {
   const [etatObjectif, setEtatObjectif] = useState<'' | 'enregistre' | 'erreur'>('')
   const [chargement, setChargement] = useState(true)
   const [erreur, setErreur] = useState('')
+  const [actualisation, setActualisation] = useState<'' | 'en_cours' | string>('')
+  const [version, setVersion] = useState(0) // incrémentée pour recharger les données
 
   // Nos joueurs
   useEffect(() => {
@@ -119,7 +121,7 @@ export default function JoueursPage() {
       setSelection((s) => s ?? liste[0]?.id ?? null)
       if (!liste.length) setChargement(false)
     })()
-  }, [])
+  }, [version])
 
   // Parties et objectif du joueur sélectionné
   useEffect(() => {
@@ -136,7 +138,28 @@ export default function JoueursPage() {
       setObjectif(g.data?.text ?? '')
       setChargement(false)
     })()
-  }, [selection])
+  }, [selection, version])
+
+  // Lance l'import SoloQ depuis le site (session du membre connecté)
+  const actualiser = async () => {
+    setActualisation('en_cours')
+    const { data, error } = await supabase.functions.invoke('import-soloq', { method: 'POST' })
+    if (error || !data?.ok) {
+      setActualisation(`Échec de l'actualisation${data?.erreur ? ' : ' + data.erreur : ''}`)
+      return
+    }
+    const bilan = data.bilan as { nouvelles: number; erreurs: string[] }[]
+    const nouvelles = bilan.reduce((n, b) => n + b.nouvelles, 0)
+    const erreurs = bilan.flatMap((b) => b.erreurs)
+    setActualisation(
+      erreurs.length
+        ? `${nouvelles} nouvelle(s) partie(s), ${erreurs.length} erreur(s) : ${erreurs[0]}`
+        : nouvelles
+          ? `${nouvelles} nouvelle(s) partie(s) importée(s)`
+          : 'Déjà à jour',
+    )
+    setVersion((v) => v + 1)
+  }
 
   const joueur = joueurs.find((j) => j.id === selection)
   const filtrees = useMemo(
@@ -193,8 +216,38 @@ export default function JoueursPage() {
             </button>
           ))}
         </div>
-        <Segmente label="Type de parties" options={FILTRES} valeur={filtre} onChange={setFiltre} />
+        <div className="flex flex-wrap items-center gap-3">
+          <Segmente label="Type de parties" options={FILTRES} valeur={filtre} onChange={setFiltre} />
+          <button
+            type="button"
+            onClick={actualiser}
+            disabled={actualisation === 'en_cours'}
+            className="flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-line-strong bg-surface px-4 text-sm font-medium text-text hover:border-accent disabled:cursor-wait disabled:opacity-60"
+          >
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 24 24"
+              width="16"
+              height="16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className={actualisation === 'en_cours' ? 'animate-spin' : ''}
+            >
+              <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+              <path d="M21 3v6h-6" />
+            </svg>
+            {actualisation === 'en_cours' ? 'Import en cours…' : 'Actualiser'}
+          </button>
+        </div>
       </div>
+      {actualisation && actualisation !== 'en_cours' && (
+        <p role="status" className="-mt-3 mb-0 text-sm text-text-2">
+          {actualisation}
+        </p>
+      )}
 
       {/* Bandeau joueur avec le splash art de son champion le plus joué */}
       {joueur && (
@@ -222,6 +275,17 @@ export default function JoueursPage() {
                 {joueur.game_name}
                 <span className="text-muted">#{joueur.tag_line}</span>
               </span>
+              {joueur.last_synced_at && (
+                <span className="text-xs text-muted">
+                  Données mises à jour le{' '}
+                  {new Date(joueur.last_synced_at).toLocaleString('fr-FR', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </span>
+              )}
             </div>
             <div className="flex flex-wrap gap-3 md:ml-auto">
               <div className="flex flex-col gap-1 rounded-xl border border-line-strong bg-bg/70 px-4 py-3">

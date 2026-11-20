@@ -1,7 +1,8 @@
 // Datant : import des parties SoloQ de nos joueurs depuis l'API Riot.
 // Fonction Supabase (Edge Function). Secrets nécessaires : RIOT_API_KEY et IMPORT_SECRET.
 // Appel : POST avec l'en-tête  x-import-secret: <IMPORT_SECRET>
-// (ou, plus tard depuis le site, avec la session d'un membre de l'équipe).
+// ou depuis le site, avec la session d'un membre de l'équipe (bouton « Actualiser »),
+// ou chaque nuit par la tâche planifiée pg_cron (voir migrations/0004).
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
 
@@ -13,6 +14,14 @@ const QUEUE_SOLOQ = 420
 const MATCHES_PER_PLAYER = 10 // parties récupérées par joueur et par passage
 
 const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+
+// Autorise l'appel depuis le site (navigateur)
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-import-secret',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+}
+const json = (corps: unknown, status = 200) => Response.json(corps, { status, headers: CORS })
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -125,13 +134,14 @@ async function importerPartie(matchId: string, puuidJoueur: string, noms: Record
 }
 
 Deno.serve(async (req) => {
-  if (!RIOT_KEY) return Response.json({ erreur: 'Secret RIOT_API_KEY manquant' }, { status: 500 })
-  if (!(await autorise(req))) return Response.json({ erreur: 'Non autorisé' }, { status: 401 })
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
+  if (!RIOT_KEY) return json({ erreur: 'Secret RIOT_API_KEY manquant' }, 500)
+  if (!(await autorise(req))) return json({ erreur: 'Non autorisé' }, 401)
 
   const { data: equipe } = await db.from('teams').select('id').eq('is_ours', true)
   const ids = (equipe ?? []).map((t) => t.id)
   const { data: joueurs, error } = await db.from('players').select('*').in('team_id', ids)
-  if (error) return Response.json({ erreur: error.message }, { status: 500 })
+  if (error) return json({ erreur: error.message }, 500)
 
   const noms = await champions()
   const bilan: any[] = []
@@ -188,5 +198,5 @@ Deno.serve(async (req) => {
     bilan.push(ligne)
   }
 
-  return Response.json({ ok: true, bilan })
+  return json({ ok: true, bilan })
 })
