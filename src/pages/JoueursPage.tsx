@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import Card from '../components/Card'
 import ChampionIcon from '../components/ChampionIcon'
 import { useDDragon } from '../lib/ddragon'
@@ -25,7 +26,12 @@ const FILTRES = [
 type Filtre = (typeof FILTRES)[number]['id']
 
 // signe : la couleur dépend du signe de la valeur (bleu = avance, orange = retard)
-const INDICATEURS: { label: string; valeur: (r: Resume) => number | null; texte: (r: Resume) => string; signe?: boolean }[] = [
+const INDICATEURS: {
+  label: string
+  valeur: (r: Resume) => number | null
+  texte: (r: Resume) => string
+  signe?: boolean
+}[] = [
   { label: 'Winrate', valeur: (r) => r.winrate, texte: (r) => fmtPct(r.winrate) },
   { label: 'KDA', valeur: (r) => r.kda, texte: (r) => fmt(r.kda, 2) },
   { label: 'Écart CS à 15 min', valeur: (r) => r.csd15, texte: (r) => fmt(r.csd15, 1, true), signe: true },
@@ -50,7 +56,11 @@ function Segmente<T extends string>({
   label: string
 }) {
   return (
-    <div role="group" aria-label={label} className="flex flex-wrap gap-1 rounded-xl border border-line bg-surface-2 p-1">
+    <div
+      role="group"
+      aria-label={label}
+      className="flex flex-wrap gap-1 rounded-xl border border-line bg-surface-2 p-1"
+    >
       {options.map((o) => (
         <button
           key={o.id}
@@ -58,7 +68,9 @@ function Segmente<T extends string>({
           aria-pressed={valeur === o.id}
           onClick={() => onChange(o.id)}
           className={`min-h-10 cursor-pointer rounded-lg border-0 px-3.5 text-sm transition-colors ${
-            valeur === o.id ? 'bg-accent font-semibold text-bg' : 'bg-transparent font-medium text-text-2 hover:text-text'
+            valeur === o.id
+              ? 'bg-accent font-semibold text-bg'
+              : 'bg-transparent font-medium text-text-2 hover:text-text'
           }`}
         >
           {o.label}
@@ -211,7 +223,8 @@ export default function JoueursPage() {
             >
               <IconeProfil joueur={j} taille={36} />
               <span>
-                <span className="text-xs font-bold text-accent-soft">{ROLES[j.role ?? ''] ?? '—'}</span> {j.display_name}
+                <span className="text-xs font-bold text-accent-soft">{ROLES[j.role ?? ''] ?? '—'}</span>{' '}
+                {j.display_name}
               </span>
             </button>
           ))}
@@ -326,7 +339,9 @@ export default function JoueursPage() {
                 <span className="text-sm text-muted">{ind.label}</span>
                 <div className="grid grid-cols-2 gap-2">
                   <div className="flex flex-col">
-                    <span className={`font-display text-2xl font-bold ${ind.signe ? couleurSigne(ind.valeur(resumeEquipe)) : ''}`}>
+                    <span
+                      className={`font-display text-2xl font-bold ${ind.signe ? couleurSigne(ind.valeur(resumeEquipe)) : ''}`}
+                    >
                       {ind.texte(resumeEquipe)}
                     </span>
                     <span className="text-xs text-muted">Scrims + off.</span>
@@ -432,51 +447,61 @@ export default function JoueursPage() {
           <Card titre="Dernières parties">
             <ul className="m-0 flex list-none flex-col gap-2 p-0">
               {dernieres.map((p) => (
-                <li
-                  key={p.match_id}
-                  className={`flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border px-3 py-2.5 ${
-                    p.win ? 'border-accent/30 bg-accent/5' : 'border-warn/30 bg-warn/5'
-                  }`}
-                >
-                  <div className="flex w-24 flex-col">
-                    <span className={`text-sm font-bold ${p.win ? 'text-accent-soft' : 'text-warn'}`}>
-                      {p.win ? 'Victoire' : 'Défaite'}
-                    </span>
-                    <span className="text-xs text-muted">
-                      {LIBELLE_SOURCE[p.source]} ·{' '}
-                      {new Date(p.played_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <ChampionIcon champion={p.champion} taille={44} />
-                    <span className="text-xs text-muted">vs</span>
-                    {p.opp_champion ? <ChampionIcon champion={p.opp_champion} taille={30} className="opacity-80" /> : '?'}
-                  </div>
-                  <div className="flex w-24 flex-col">
-                    <span className="text-sm font-semibold">
-                      {p.kills} / <span className="text-warn">{p.deaths}</span> / {p.assists}
-                    </span>
-                    <span className="text-xs text-muted">
-                      KDA {fmt((p.kills + p.assists) / Math.max(1, p.deaths), 2)}
-                    </span>
-                  </div>
-                  <div className="flex gap-5 text-sm">
-                    <div className="flex flex-col">
-                      <span className={`font-semibold ${couleurSigne(p.csd_15)}`}>{fmt(p.csd_15, 0, true)}</span>
-                      <span className="text-xs text-muted">CS à 15</span>
+                <li key={p.match_id}>
+                  <Link
+                    to={`/partie/${p.match_id}`}
+                    aria-label={`Voir le détail de la partie du ${new Date(p.played_at).toLocaleDateString('fr-FR')}`}
+                    className={`flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border px-3 py-2.5 text-text no-underline transition-colors hover:border-accent ${
+                      p.win ? 'border-accent/30 bg-accent/5' : 'border-warn/30 bg-warn/5'
+                    }`}
+                  >
+                    <div className="flex w-24 flex-col">
+                      <span className={`text-sm font-bold ${p.win ? 'text-accent-soft' : 'text-warn'}`}>
+                        {p.win ? 'Victoire' : 'Défaite'}
+                      </span>
+                      <span className="text-xs text-muted">
+                        {LIBELLE_SOURCE[p.source]} ·{' '}
+                        {new Date(p.played_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}
+                      </span>
                     </div>
-                    <div className="flex flex-col">
-                      <span className={`font-semibold ${couleurSigne(p.gd_15)}`}>{fmt(p.gd_15, 0, true)}</span>
-                      <span className="text-xs text-muted">or à 15</span>
+                    <div className="flex items-center gap-2">
+                      <ChampionIcon champion={p.champion} taille={44} />
+                      <span className="text-xs text-muted">vs</span>
+                      {p.opp_champion ? (
+                        <ChampionIcon champion={p.opp_champion} taille={30} className="opacity-80" />
+                      ) : (
+                        '?'
+                      )}
                     </div>
-                    <div className="flex flex-col">
-                      <span className="font-semibold">{p.cs}</span>
-                      <span className="text-xs text-muted">CS</span>
+                    <div className="flex w-24 flex-col">
+                      <span className="text-sm font-semibold">
+                        {p.kills} / <span className="text-warn">{p.deaths}</span> / {p.assists}
+                      </span>
+                      <span className="text-xs text-muted">
+                        KDA {fmt((p.kills + p.assists) / Math.max(1, p.deaths), 2)}
+                      </span>
                     </div>
-                  </div>
-                  <span className="ml-auto text-xs text-muted">
-                    {Math.floor(p.duration_s / 60)}:{String(p.duration_s % 60).padStart(2, '0')}
-                  </span>
+                    <div className="flex gap-5 text-sm">
+                      <div className="flex flex-col">
+                        <span className={`font-semibold ${couleurSigne(p.csd_15)}`}>{fmt(p.csd_15, 0, true)}</span>
+                        <span className="text-xs text-muted">CS à 15</span>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className={`font-semibold ${couleurSigne(p.gd_15)}`}>{fmt(p.gd_15, 0, true)}</span>
+                        <span className="text-xs text-muted">or à 15</span>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="font-semibold">{p.cs}</span>
+                        <span className="text-xs text-muted">CS</span>
+                      </div>
+                    </div>
+                    <span className="ml-auto flex items-center gap-2 text-xs text-muted">
+                      {Math.floor(p.duration_s / 60)}:{String(p.duration_s % 60).padStart(2, '0')}
+                      <span aria-hidden="true" className="text-base text-text-2">
+                        ›
+                      </span>
+                    </span>
+                  </Link>
                 </li>
               ))}
             </ul>
