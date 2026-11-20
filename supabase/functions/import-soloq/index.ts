@@ -65,6 +65,40 @@ function aLaMinute(timeline: any, minute: number, pid: number) {
   return { gold: p.totalGold, cs: p.minionsKilled + p.jungleMinionsKilled, xp: p.xp }
 }
 
+// Timeline compacte : positions/or/niveau/CS par minute + kills, tours et monstres épiques.
+// (la timeline brute de Riot pèse ~1 Mo ; cette version quelques dizaines de Ko)
+function compacterTimeline(tl: any) {
+  const frames = tl.info.frames.map((f: any) => ({
+    t: f.timestamp,
+    p: Object.fromEntries(
+      Object.entries<any>(f.participantFrames).map(([id, pf]) => [
+        id,
+        [pf.position?.x ?? null, pf.position?.y ?? null, pf.totalGold, pf.level, pf.minionsKilled + pf.jungleMinionsKilled],
+      ]),
+    ),
+  }))
+  const events: any[] = []
+  for (const f of tl.info.frames) {
+    for (const e of f.events ?? []) {
+      const base = { t: e.timestamp, x: e.position?.x ?? null, y: e.position?.y ?? null }
+      if (e.type === 'CHAMPION_KILL') {
+        events.push({ ...base, k: 'kill', a: e.killerId, v: e.victimId, as: e.assistingParticipantIds ?? [] })
+      } else if (e.type === 'BUILDING_KILL') {
+        // teamId = équipe qui PERD le bâtiment
+        events.push({ ...base, k: 'building', a: e.killerId, perd: e.teamId, b: e.buildingType, l: e.laneType, tw: e.towerType ?? null })
+      } else if (e.type === 'ELITE_MONSTER_KILL') {
+        events.push({ ...base, k: 'monster', a: e.killerId, team: e.killerTeamId, m: e.monsterType, s: e.monsterSubType ?? null })
+      }
+    }
+  }
+  return { interval: tl.info.frameInterval ?? 60000, frames, events }
+}
+
+async function enregistrerTimeline(matchId: string, timeline: any) {
+  const { error } = await db.from('match_timelines').upsert({ match_id: matchId, data: compacterTimeline(timeline) })
+  if (error) throw error
+}
+
 async function importerPartie(matchId: string, puuidJoueur: string, noms: Record<number, string>) {
   const match = await riot(`/lol/match/v5/matches/${matchId}`)
   const timeline = await riot(`/lol/match/v5/matches/${matchId}/timeline`)
@@ -131,6 +165,8 @@ async function importerPartie(matchId: string, puuidJoueur: string, noms: Record
   })
   const { error: e3 } = await db.from('match_participants').upsert(joueurs)
   if (e3) throw e3
+
+  await enregistrerTimeline(matchId, timeline)
 }
 
 Deno.serve(async (req) => {
@@ -191,6 +227,22 @@ Deno.serve(async (req) => {
           ligne.erreurs.push(`${id} : ${(e as Error).message}`)
         }
       }
+      // 5. Rattrapage : timelines manquantes pour les parties déjà en base (10 max par passage)
+      const { data: siennes } = await db.from('match_participants').select('match_id').eq('puuid', puuid)
+      const sesIds = (siennes ?? []).map((m) => m.match_id)
+      if (sesIds.length) {
+        const { data: avec } = await db.from('match_timelines').select('match_id').in('match_id', sesIds)
+        const ont = new Set((avec ?? []).map((m) => m.match_id))
+        for (const id of sesIds.filter((id) => !ont.has(id) && id.includes('_')).slice(0, 10)) {
+          try {
+            await enregistrerTimeline(id, await riot(`/lol/match/v5/matches/${id}/timeline`))
+            ligne.timelines = (ligne.timelines ?? 0) + 1
+          } catch (e) {
+            ligne.erreurs.push(`timeline ${id} : ${(e as Error).message}`)
+          }
+        }
+      }
+
       await db.from('players').update({ last_synced_at: new Date().toISOString() }).eq('id', j.id)
     } catch (e) {
       ligne.erreurs.push((e as Error).message)
