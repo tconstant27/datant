@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import Card from '../components/Card'
-import PageHeader from '../components/PageHeader'
+import ChampionIcon from '../components/ChampionIcon'
+import { useDDragon } from '../lib/ddragon'
 import { supabase } from '../lib/supabase'
 import {
   fmt,
   fmtPct,
+  libelleRang,
   ORDRE_ROLES,
   poolChampions,
   resumer,
@@ -22,16 +24,19 @@ const FILTRES = [
 ] as const
 type Filtre = (typeof FILTRES)[number]['id']
 
-const INDICATEURS: { label: string; valeur: (r: Resume) => string }[] = [
-  { label: 'Winrate', valeur: (r) => fmtPct(r.winrate) },
-  { label: 'KDA', valeur: (r) => fmt(r.kda, 2) },
-  { label: 'Écart CS à 15 min', valeur: (r) => fmt(r.csd15, 1, true) },
-  { label: 'Écart d’or à 15 min', valeur: (r) => fmt(r.gd15, 0, true) },
-  { label: 'Participation kills', valeur: (r) => fmtPct(r.kp) },
-  { label: 'Dégâts / min', valeur: (r) => fmt(r.dpm) },
-  { label: 'Vision / min', valeur: (r) => fmt(r.visionMin, 2) },
-  { label: 'CS / min', valeur: (r) => fmt(r.csMin, 1) },
+// signe : la couleur dépend du signe de la valeur (bleu = avance, orange = retard)
+const INDICATEURS: { label: string; valeur: (r: Resume) => number | null; texte: (r: Resume) => string; signe?: boolean }[] = [
+  { label: 'Winrate', valeur: (r) => r.winrate, texte: (r) => fmtPct(r.winrate) },
+  { label: 'KDA', valeur: (r) => r.kda, texte: (r) => fmt(r.kda, 2) },
+  { label: 'Écart CS à 15 min', valeur: (r) => r.csd15, texte: (r) => fmt(r.csd15, 1, true), signe: true },
+  { label: 'Écart d’or à 15 min', valeur: (r) => r.gd15, texte: (r) => fmt(r.gd15, 0, true), signe: true },
+  { label: 'Participation kills', valeur: (r) => r.kp, texte: (r) => fmtPct(r.kp) },
+  { label: 'Dégâts / min', valeur: (r) => r.dpm, texte: (r) => fmt(r.dpm) },
+  { label: 'Vision / min', valeur: (r) => r.visionMin, texte: (r) => fmt(r.visionMin, 2) },
+  { label: 'CS / min', valeur: (r) => r.csMin, texte: (r) => fmt(r.csMin, 1) },
 ]
+
+const couleurSigne = (v: number | null) => (v === null || v === 0 ? '' : v > 0 ? 'text-accent-soft' : 'text-warn')
 
 function Segmente<T extends string>({
   options,
@@ -52,7 +57,7 @@ function Segmente<T extends string>({
           type="button"
           aria-pressed={valeur === o.id}
           onClick={() => onChange(o.id)}
-          className={`min-h-10 cursor-pointer rounded-lg border-0 px-3.5 text-sm ${
+          className={`min-h-10 cursor-pointer rounded-lg border-0 px-3.5 text-sm transition-colors ${
             valeur === o.id ? 'bg-accent font-semibold text-bg' : 'bg-transparent font-medium text-text-2 hover:text-text'
           }`}
         >
@@ -63,7 +68,31 @@ function Segmente<T extends string>({
   )
 }
 
+function IconeProfil({ joueur, taille }: { joueur: Joueur; taille: number }) {
+  const dd = useDDragon()
+  const src = dd.profil(joueur.profile_icon)
+  return src ? (
+    <img
+      src={src}
+      alt=""
+      width={taille}
+      height={taille}
+      style={{ width: taille, height: taille }}
+      className="shrink-0 rounded-full border-2 border-line-strong object-cover"
+    />
+  ) : (
+    <span
+      style={{ width: taille, height: taille }}
+      className="flex shrink-0 items-center justify-center rounded-full bg-active font-display font-bold text-accent-soft"
+      aria-hidden="true"
+    >
+      {joueur.display_name.slice(0, 1)}
+    </span>
+  )
+}
+
 export default function JoueursPage() {
+  const dd = useDDragon()
   const [joueurs, setJoueurs] = useState<Joueur[]>([])
   const [selection, setSelection] = useState<string | null>(null)
   const [parties, setParties] = useState<Partie[]>([])
@@ -78,7 +107,9 @@ export default function JoueursPage() {
     ;(async () => {
       const { data, error } = await supabase
         .from('players')
-        .select('id, display_name, role, game_name, tag_line, teams!inner(is_ours)')
+        .select(
+          'id, display_name, role, game_name, tag_line, profile_icon, rank_tier, rank_division, rank_lp, rank_wins, rank_losses, last_synced_at, teams!inner(is_ours)',
+        )
         .eq('teams.is_ours', true)
       if (error) return setErreur(error.message)
       const liste = (data as unknown as Joueur[]).sort(
@@ -118,6 +149,7 @@ export default function JoueursPage() {
   const resumeEquipe = useMemo(() => resumer(parties.filter((p) => p.source !== 'soloq')), [parties])
   const resumeSoloq = useMemo(() => resumer(parties.filter((p) => p.source === 'soloq')), [parties])
   const pool = useMemo(() => poolChampions(filtrees), [filtrees])
+  const championFetiche = poolChampions(parties)[0]?.champion
   const dernieres = filtrees.slice(0, 10)
   const barres = [...dernieres].reverse()
   const maxEcart = Math.max(500, ...barres.map((p) => Math.abs(p.gd_15 ?? 0)))
@@ -134,45 +166,86 @@ export default function JoueursPage() {
     return <p className="text-sm text-warn">Erreur de chargement : {erreur}</p>
   }
 
+  const victoires = joueur?.rank_wins ?? 0
+  const defaites = joueur?.rank_losses ?? 0
+
   return (
     <>
-      <PageHeader
-        surtitre="Progression individuelle"
-        titre="Joueurs"
-        actions={<Segmente label="Type de parties" options={FILTRES} valeur={filtre} onChange={setFiltre} />}
-      />
-
-      {/* Choix du joueur */}
-      <div role="group" aria-label="Choisir un joueur" className="flex flex-wrap gap-2">
-        {joueurs.map((j) => (
-          <button
-            key={j.id}
-            type="button"
-            aria-pressed={selection === j.id}
-            onClick={() => setSelection(j.id)}
-            className={`min-h-11 cursor-pointer rounded-xl border px-4 text-sm ${
-              selection === j.id
-                ? 'border-accent bg-accent font-semibold text-bg'
-                : 'border-line-strong bg-surface font-medium text-text-2 hover:text-text'
-            }`}
-          >
-            {ROLES[j.role ?? ''] ?? '—'} · {j.display_name}
-          </button>
-        ))}
+      {/* Choix du joueur et filtre */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div role="group" aria-label="Choisir un joueur" className="flex flex-wrap gap-2">
+          {joueurs.map((j) => (
+            <button
+              key={j.id}
+              type="button"
+              aria-pressed={selection === j.id}
+              onClick={() => setSelection(j.id)}
+              className={`flex min-h-12 cursor-pointer items-center gap-2.5 rounded-full border py-1 pr-4 pl-1 text-sm transition-colors ${
+                selection === j.id
+                  ? 'border-accent bg-active font-semibold text-text'
+                  : 'border-line-strong bg-surface font-medium text-text-2 hover:text-text'
+              }`}
+            >
+              <IconeProfil joueur={j} taille={36} />
+              <span>
+                <span className="text-xs font-bold text-accent-soft">{ROLES[j.role ?? ''] ?? '—'}</span> {j.display_name}
+              </span>
+            </button>
+          ))}
+        </div>
+        <Segmente label="Type de parties" options={FILTRES} valeur={filtre} onChange={setFiltre} />
       </div>
 
+      {/* Bandeau joueur avec le splash art de son champion le plus joué */}
       {joueur && (
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-line-strong bg-active font-display text-lg font-bold text-accent-soft">
-            {ROLES[joueur.role ?? ''] ?? '—'}
+        <section className="relative overflow-hidden rounded-2xl border border-line bg-surface">
+          {championFetiche && (
+            <img
+              src={dd.splash(championFetiche)}
+              alt=""
+              aria-hidden="true"
+              className="absolute inset-0 h-full w-full object-cover object-[center_20%] opacity-45"
+            />
+          )}
+          <div className="absolute inset-0 bg-gradient-to-r from-bg via-bg/85 to-bg/30" aria-hidden="true" />
+          <div className="relative flex flex-wrap items-center gap-5 p-6 md:p-8">
+            <div className="relative">
+              <IconeProfil joueur={joueur} taille={88} />
+              <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 rounded-md bg-accent px-2 py-0.5 text-xs font-bold text-bg">
+                {ROLES[joueur.role ?? ''] ?? '—'}
+              </span>
+            </div>
+            <div className="flex min-w-0 flex-col gap-1.5">
+              <span className="text-xs tracking-widest text-muted uppercase">Triforce Esport</span>
+              <h1 className="m-0 font-display text-4xl font-bold">{joueur.display_name}</h1>
+              <span className="text-sm text-text-2">
+                {joueur.game_name}
+                <span className="text-muted">#{joueur.tag_line}</span>
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-3 md:ml-auto">
+              <div className="flex flex-col gap-1 rounded-xl border border-line-strong bg-bg/70 px-4 py-3">
+                <span className="text-xs text-muted">Rang SoloQ</span>
+                <span className="font-display text-lg font-bold">{libelleRang(joueur)}</span>
+                {joueur.rank_tier && (
+                  <span className="text-xs text-muted">
+                    {victoires} V · {defaites} D ·{' '}
+                    {fmtPct(victoires + defaites ? (100 * victoires) / (victoires + defaites) : null)}
+                  </span>
+                )}
+              </div>
+              {championFetiche && (
+                <div className="flex items-center gap-3 rounded-xl border border-line-strong bg-bg/70 px-4 py-3">
+                  <ChampionIcon champion={championFetiche} taille={40} />
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-xs text-muted">Le plus joué</span>
+                    <span className="font-display text-lg font-bold">{dd.nom(championFetiche)}</span>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
-          <div className="flex flex-col gap-1">
-            <h2 className="m-0 font-display text-3xl font-bold">{joueur.display_name}</h2>
-            <span className="text-sm text-muted">
-              {joueur.game_name}#{joueur.tag_line} · {parties.length} parties en base
-            </span>
-          </div>
-        </div>
+        </section>
       )}
 
       {chargement ? (
@@ -182,15 +255,24 @@ export default function JoueursPage() {
           {/* Indicateurs : matchs d'équipe vs SoloQ */}
           <section aria-label="Indicateurs" className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4">
             {INDICATEURS.map((ind) => (
-              <div key={ind.label} className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4">
+              <div
+                key={ind.label}
+                className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 transition-colors hover:border-line-strong"
+              >
                 <span className="text-sm text-muted">{ind.label}</span>
                 <div className="grid grid-cols-2 gap-2">
                   <div className="flex flex-col">
-                    <span className="font-display text-2xl font-bold">{ind.valeur(resumeEquipe)}</span>
+                    <span className={`font-display text-2xl font-bold ${ind.signe ? couleurSigne(ind.valeur(resumeEquipe)) : ''}`}>
+                      {ind.texte(resumeEquipe)}
+                    </span>
                     <span className="text-xs text-muted">Scrims + off.</span>
                   </div>
                   <div className="flex flex-col border-l border-line pl-3">
-                    <span className="font-display text-2xl font-bold text-text-2">{ind.valeur(resumeSoloq)}</span>
+                    <span
+                      className={`font-display text-2xl font-bold ${ind.signe ? couleurSigne(ind.valeur(resumeSoloq)) : 'text-text-2'}`}
+                    >
+                      {ind.texte(resumeSoloq)}
+                    </span>
                     <span className="text-xs text-muted">SoloQ</span>
                   </div>
                 </div>
@@ -215,7 +297,7 @@ export default function JoueursPage() {
                   <div
                     role="img"
                     aria-label="Histogramme de l'écart d'or à 15 minutes sur les dernières parties"
-                    className="grid h-56 gap-2"
+                    className="grid gap-2"
                     style={{ gridTemplateColumns: `repeat(${barres.length}, minmax(0, 1fr))` }}
                   >
                     {barres.map((p) => {
@@ -224,21 +306,29 @@ export default function JoueursPage() {
                       return (
                         <div
                           key={p.match_id}
-                          className="flex h-56 flex-col"
-                          title={`${p.champion} vs ${p.opp_champion ?? '?'} : ${fmt(v, 0, true)} or`}
+                          className="flex flex-col items-center gap-2"
+                          title={`${dd.nom(p.champion)} vs ${p.opp_champion ? dd.nom(p.opp_champion) : '?'} : ${fmt(v, 0, true)} or`}
                         >
-                          <div className="flex h-1/2 items-end">
-                            {v > 0 && <div className="w-full rounded-t bg-accent" style={{ height: h }} />}
+                          <div className="flex h-52 w-full flex-col">
+                            <div className="flex h-1/2 items-end">
+                              {v > 0 && <div className="w-full rounded-t bg-accent" style={{ height: h }} />}
+                            </div>
+                            <div className="flex h-1/2 items-start border-t border-line-strong">
+                              {v < 0 && <div className="w-full rounded-b bg-warn" style={{ height: h }} />}
+                            </div>
                           </div>
-                          <div className="flex h-1/2 items-start border-t border-line-strong">
-                            {v < 0 && <div className="w-full rounded-b bg-warn" style={{ height: h }} />}
-                          </div>
+                          <ChampionIcon
+                            champion={p.champion}
+                            taille={28}
+                            className={p.win ? 'ring-2 ring-accent/70' : 'opacity-70'}
+                          />
                         </div>
                       )
                     })}
                   </div>
                   <div className="flex justify-between text-xs text-muted">
                     <span>plus ancienne</span>
+                    <span>icône entourée = victoire</span>
                     <span>plus récente</span>
                   </div>
                 </>
@@ -247,78 +337,85 @@ export default function JoueursPage() {
 
             {/* Pool de champions */}
             <Card titre="Pool de champions" className="min-w-0 flex-[1_1_340px]">
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-sm">
-                  <thead>
-                    <tr className="text-left text-xs text-muted">
-                      <th className="px-1.5 py-2 font-medium">Champion</th>
-                      <th className="px-1.5 py-2 font-medium">Parties</th>
-                      <th className="px-1.5 py-2 font-medium">WR</th>
-                      <th className="px-1.5 py-2 font-medium">KDA</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pool.map((c) => (
-                      <tr key={c.champion} className="border-t border-line">
-                        <td className="px-1.5 py-2.5 font-semibold">{c.champion}</td>
-                        <td className="px-1.5 py-2.5">{c.parties}</td>
-                        <td className="px-1.5 py-2.5">{fmtPct(c.winrate)}</td>
-                        <td className="px-1.5 py-2.5 text-text-2">{fmt(c.kda, 2)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <ul className="m-0 flex list-none flex-col gap-2 p-0">
+                {pool.map((c) => (
+                  <li key={c.champion} className="flex items-center gap-3 rounded-lg bg-input px-3 py-2">
+                    <ChampionIcon champion={c.champion} taille={36} />
+                    <div className="flex min-w-0 flex-1 flex-col gap-1">
+                      <div className="flex items-baseline justify-between gap-2 text-sm">
+                        <span className="truncate font-semibold">{dd.nom(c.champion)}</span>
+                        <span className="text-xs text-muted">
+                          {c.parties} p. · KDA {fmt(c.kda, 2)}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-line">
+                          <div
+                            className={`h-full rounded-full ${c.winrate >= 50 ? 'bg-accent' : 'bg-warn'}`}
+                            style={{ width: `${c.winrate}%` }}
+                          />
+                        </div>
+                        <span className="w-10 text-right text-xs font-semibold">{fmtPct(c.winrate)}</span>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
             </Card>
           </div>
 
           {/* Dernières parties */}
           <Card titre="Dernières parties">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[640px] border-collapse text-sm">
-                <thead>
-                  <tr className="text-left text-xs text-muted">
-                    <th className="px-2 py-2 font-medium">Date</th>
-                    <th className="px-2 py-2 font-medium">Type</th>
-                    <th className="px-2 py-2 font-medium">Champion</th>
-                    <th className="px-2 py-2 font-medium">Résultat</th>
-                    <th className="px-2 py-2 font-medium">KDA</th>
-                    <th className="px-2 py-2 font-medium">Écart CS 15</th>
-                    <th className="px-2 py-2 font-medium">Écart or 15</th>
-                    <th className="px-2 py-2 font-medium">Durée</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {dernieres.map((p) => (
-                    <tr key={p.match_id} className="border-t border-line">
-                      <td className="px-2 py-3 text-muted">
-                        {new Date(p.played_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}
-                      </td>
-                      <td className="px-2 py-3">{LIBELLE_SOURCE[p.source]}</td>
-                      <td className="px-2 py-3">
-                        <span className="font-semibold">{p.champion}</span>
-                        <span className="text-muted"> vs {p.opp_champion ?? '?'}</span>
-                      </td>
-                      <td className="px-2 py-3">
-                        <span
-                          className={`rounded-md px-2.5 py-1 text-xs font-bold text-bg ${p.win ? 'bg-accent' : 'bg-warn'}`}
-                        >
-                          {p.win ? 'Victoire' : 'Défaite'}
-                        </span>
-                      </td>
-                      <td className="px-2 py-3">
-                        {p.kills}/{p.deaths}/{p.assists}
-                      </td>
-                      <td className="px-2 py-3">{fmt(p.csd_15, 0, true)}</td>
-                      <td className="px-2 py-3 font-semibold">{fmt(p.gd_15, 0, true)}</td>
-                      <td className="px-2 py-3 text-muted">
-                        {Math.floor(p.duration_s / 60)}:{String(p.duration_s % 60).padStart(2, '0')}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ul className="m-0 flex list-none flex-col gap-2 p-0">
+              {dernieres.map((p) => (
+                <li
+                  key={p.match_id}
+                  className={`flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border px-3 py-2.5 ${
+                    p.win ? 'border-accent/30 bg-accent/5' : 'border-warn/30 bg-warn/5'
+                  }`}
+                >
+                  <div className="flex w-24 flex-col">
+                    <span className={`text-sm font-bold ${p.win ? 'text-accent-soft' : 'text-warn'}`}>
+                      {p.win ? 'Victoire' : 'Défaite'}
+                    </span>
+                    <span className="text-xs text-muted">
+                      {LIBELLE_SOURCE[p.source]} ·{' '}
+                      {new Date(p.played_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <ChampionIcon champion={p.champion} taille={44} />
+                    <span className="text-xs text-muted">vs</span>
+                    {p.opp_champion ? <ChampionIcon champion={p.opp_champion} taille={30} className="opacity-80" /> : '?'}
+                  </div>
+                  <div className="flex w-24 flex-col">
+                    <span className="text-sm font-semibold">
+                      {p.kills} / <span className="text-warn">{p.deaths}</span> / {p.assists}
+                    </span>
+                    <span className="text-xs text-muted">
+                      KDA {fmt((p.kills + p.assists) / Math.max(1, p.deaths), 2)}
+                    </span>
+                  </div>
+                  <div className="flex gap-5 text-sm">
+                    <div className="flex flex-col">
+                      <span className={`font-semibold ${couleurSigne(p.csd_15)}`}>{fmt(p.csd_15, 0, true)}</span>
+                      <span className="text-xs text-muted">CS à 15</span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className={`font-semibold ${couleurSigne(p.gd_15)}`}>{fmt(p.gd_15, 0, true)}</span>
+                      <span className="text-xs text-muted">or à 15</span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="font-semibold">{p.cs}</span>
+                      <span className="text-xs text-muted">CS</span>
+                    </div>
+                  </div>
+                  <span className="ml-auto text-xs text-muted">
+                    {Math.floor(p.duration_s / 60)}:{String(p.duration_s % 60).padStart(2, '0')}
+                  </span>
+                </li>
+              ))}
+            </ul>
           </Card>
 
           {/* Objectifs du coach */}

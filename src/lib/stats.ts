@@ -28,6 +28,24 @@ export type Joueur = {
   role: string | null
   game_name: string
   tag_line: string
+  profile_icon: number | null
+  rank_tier: string | null
+  rank_division: string | null
+  rank_lp: number | null
+  rank_wins: number | null
+  rank_losses: number | null
+  last_synced_at: string | null
+}
+
+const TIERS: Record<string, string> = {
+  IRON: 'Fer', BRONZE: 'Bronze', SILVER: 'Argent', GOLD: 'Or', PLATINUM: 'Platine',
+  EMERALD: 'Émeraude', DIAMOND: 'Diamant', MASTER: 'Maître', GRANDMASTER: 'Grand Maître', CHALLENGER: 'Challenger',
+}
+
+export function libelleRang(j: Joueur): string {
+  if (!j.rank_tier) return 'Non classé'
+  const apex = ['MASTER', 'GRANDMASTER', 'CHALLENGER'].includes(j.rank_tier)
+  return `${TIERS[j.rank_tier] ?? j.rank_tier}${apex ? '' : ' ' + (j.rank_division ?? '')} · ${j.rank_lp ?? 0} LP`
 }
 
 export const ROLES: Record<string, string> = {
