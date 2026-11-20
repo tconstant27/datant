@@ -1,8 +1,8 @@
 -- Datant : ajout de notre équipe et de nos joueurs
--- Remplace [NOM DE L'ÉQUIPE] avant de lancer. Les rôles se modifient ensuite dans Table Editor › players.
+-- Les rôles se modifient ensuite dans Table Editor › players.
 
 with equipe as (
-  insert into teams (name, is_ours) values ('[NOM DE L''ÉQUIPE]', true)
+  insert into teams (name, is_ours) values ('Triforce Esport', true)
   returning id
 )
 insert into players (team_id, display_name, role, game_name, tag_line)
