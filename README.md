@@ -12,12 +12,12 @@ avec en priorité les stats des parties perso (scrims et officiels).
 | Base et comptes | Supabase | Stockage des parties, accès réservé à l'équipe |
 | API Riot | Fonctions Supabase | SoloQ des joueurs et des adversaires (clé côté serveur) |
 | Collecteur | App Windows (Tauri) | Récupère les parties perso depuis le client LoL |
-| Hébergement | Vercel | Mise en ligne du site |
+| Hébergement | GitHub Pages | Mise en ligne du site (https://tconstant27.github.io/datant/) |
 
 ## Avancement
 
 - [x] Étape 1 : base du projet (navigation, style, pages vides)
-- [ ] Étape 2 : import SoloQ et fiches joueurs
+- [x] Étape 2 : import SoloQ et fiches joueurs
 - [ ] Étape 3 : vue équipe
 - [ ] Étape 4 : collecteur de parties perso
 - [ ] Étape 5 : scouting et draft
@@ -33,6 +33,13 @@ npm run dev
 ```
 
 Le site s'ouvre sur http://localhost:5173.
+
+## Base de données
+
+- `supabase/migrations/` : scripts SQL de la base, à appliquer dans l'ordre.
+- `supabase/seed_equipe.sql` : notre équipe et nos joueurs.
+- `supabase/functions/import-soloq/` : import des parties SoloQ depuis l'API Riot
+  (secrets Supabase : `RIOT_API_KEY`, `IMPORT_SECRET`).
 
 ## Secrets
 

@@ -1,4 +1,5 @@
 import { NavLink } from 'react-router-dom'
+import { useAuth } from '../lib/auth'
 
 const LIENS = [
   { to: '/', label: 'Vue équipe', end: true },
@@ -9,6 +10,7 @@ const LIENS = [
 ]
 
 export default function Sidebar() {
+  const { session, signOut } = useAuth()
   return (
     <nav
       aria-label="Navigation principale"
@@ -20,7 +22,7 @@ export default function Sidebar() {
         </div>
         <div className="flex flex-col">
           <span className="font-display text-base font-bold">Nexus Data</span>
-          <span className="text-xs text-muted">Équipe Nexus Tour</span>
+          <span className="text-xs text-muted">Triforce Esport</span>
         </div>
       </div>
 
@@ -44,13 +46,25 @@ export default function Sidebar() {
         ))}
       </ul>
 
-      {/* Statut du collecteur : sera branché sur Supabase à l'étape 4 */}
-      <div className="mt-auto hidden flex-col gap-1.5 rounded-xl border border-line bg-surface-2 p-3.5 md:flex">
-        <div className="flex items-center gap-2 text-sm font-semibold">
-          <span className="h-2 w-2 rounded-full bg-muted" aria-hidden="true" />
-          Collecteur non configuré
+      <div className="mt-auto flex flex-col gap-3">
+        {/* Statut du collecteur : sera branché à l'étape 4 */}
+        <div className="hidden flex-col gap-1.5 rounded-xl border border-line bg-surface-2 p-3.5 md:flex">
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <span className="h-2 w-2 rounded-full bg-muted" aria-hidden="true" />
+            Collecteur non configuré
+          </div>
+          <span className="text-xs text-muted">Aucune partie perso reçue pour l'instant</span>
         </div>
-        <span className="text-xs text-muted">Aucune partie perso reçue pour l'instant</span>
+        <div className="flex items-center justify-between gap-2 text-xs text-muted">
+          <span className="truncate">{session?.user.email}</span>
+          <button
+            type="button"
+            onClick={signOut}
+            className="min-h-9 shrink-0 cursor-pointer rounded-md border border-line-strong bg-transparent px-2.5 text-xs text-text-2 hover:text-text"
+          >
+            Déconnexion
+          </button>
+        </div>
       </div>
     </nav>
   )
